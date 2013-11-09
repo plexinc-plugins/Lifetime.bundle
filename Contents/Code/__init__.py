@@ -1,26 +1,14 @@
-import re
-
 NAME = 'Lifetime'
 ICON = 'icon-default.png'
 ART = 'art-default.jpg'
-
 LT_BASE = '/video/lifetime'
 
 LT_URL = 'http://www.mylifetime.com'
-LT_VIDEO = LT_URL + '/video'
-LT_SHOWS = LT_URL + '/shows'
-LT_MOVIES = LT_URL + '/movies'
-LT_MOVIES_NEW = 'http://www.mylifetime.com/watch-full-movies-online'
-LT_SHOW_PREFIX = LT_SHOWS + '/'
-LT_MOVIE_PREFIX = LT_MOVIES + '/'
-LT_VIDEO_POSTFIX = '/video'
+LT_SHOWS = LT_URL + '/shows/'
+LT_MOVIES = 'http://www.mylifetime.com/video?field_length_value_many_to_one=FullMov'
 LT_SECTIONS = '%s?field_length_value_many_to_one=%s&media_type=shows'
 
-RE_SEASON  = Regex('Season (\d{1,2})')
 RE_EPISODE  = Regex('Episode (\d{1,3}).+')
-
-MILLISECONDS_IN_A_MINUTE = 60000
-URL_EXTENSIONS = ["-splash-page", "-0", "_ep", "-test"]
 
 ####################################################################################################
 def Start():
@@ -28,11 +16,10 @@ def Start():
     ObjectContainer.art = R(ART)
     ObjectContainer.title1 = NAME
     DirectoryObject.thumb = R(ICON)
-    NextPageObject.thumb = R(ICON)
     EpisodeObject.thumb = R(ICON)
     VideoClipObject.thumb = R(ICON)
 
-    #HTTP.CacheTime = CACHE_1HOUR
+    HTTP.CacheTime = CACHE_1HOUR
     HTTP.Headers['User-Agent'] = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.8; rv:18.0) Gecko/20100101 Firefox/18.0'
 
 ####################################################################################################
@@ -40,85 +27,50 @@ def Start():
 def MainMenu():
 
     oc = ObjectContainer()
-
-    html = HTML.ElementFromURL(LT_VIDEO)
-    
-    for header in html.xpath('//div[@id="accordion"]/h3'):
-        title = header.xpath('./a/text()')[0]
-        if 'Movie' in title:
-            continue
-        else:
-            oc.add(DirectoryObject(key=Callback(Shows, title=title), title=title))
-            
-    oc.add(DirectoryObject(key=Callback(Movie, title="Movies"), title="Movies"))
-
+    oc.add(DirectoryObject(key=Callback(Shows, title="Current Shows", show_type='-middle'), title="Current Shows"))
+    oc.add(DirectoryObject(key=Callback(Shows, title="Classic Shows", show_type=' classic-show'), title="Classic Shows"))
+    oc.add(DirectoryObject(key=Callback(Videos, url=LT_MOVIES, vid_type='FullMov', title="Movies"), title="Movies"))
     return oc
     
 ####################################################################################################
+# This function produces a list of TV shows from the lifetime show page
+# Original plugin used video page. Using show page allows for images and fixes issue with show URLs errors due to added characters
 @route(LT_BASE + '/shows')
-def Shows(title):
+def Shows(title, show_type):
     
     oc = ObjectContainer(title2=title)
-    html = HTML.ElementFromURL(LT_VIDEO)
+    html = HTML.ElementFromURL(LT_SHOWS)
     
-    for show_element in html.xpath('//h3/a[text()="' + title + '"]/../following-sibling::div[1]//span[@class="views-field-title"]//a'):
-        show = show_element.xpath('./text()')[0]
-        original_url = show_element.xpath('./@href')[0]
-        Log('the value of original_url is %s' %original_url)
-        # By trial and error, any original URL containing 'test', 'page', or a number at the end needs to be corrected.
-        # Check for extra backslash in show name of url and then compare to list of errors that may be at the end of urls
-        section_url = original_url.split('shows/')[1]
-        if '/' in section_url:
-            section_url = section_url.split('/')[0]
-            original_url = LT_SHOW_PREFIX + section_url
-        for ending in URL_EXTENSIONS:
-            if original_url.endswith(ending):
-                original_url = original_url.split(ending)[0]
+    for shows in html.xpath('//div[@class="show-item-wrapper%s"]/div/div[contains(@class,"show-item item-")]' %show_type):
+        show = shows.xpath('./h3/a//text()')[0]
+        url = shows.xpath('./h3/a//@href')[0]
+        vid_url = url + '/video'
+        if 'classic' in show_type:
+            thumb = R(ICON)
+        else:
+            thumb = shows.xpath('./div/a/img//@src')[0]
 
-        url = original_url + LT_VIDEO_POSTFIX
-        oc.add(DirectoryObject(key = Callback(Sections, title=show, url=url), title = show))
+        oc.add(DirectoryObject(key = Callback(Sections, title=show, url=vid_url, thumb=thumb), title=show, thumb=thumb))
             
     return oc
     
 ####################################################################################################
-def Movie(title):
-
-    oc = ObjectContainer(title2=title)
-    html = HTML.ElementFromURL(LT_MOVIES_NEW)
-    for video in html.xpath('//div[contains(@class,"shcedule-item")]'):
-        movie_type = video.xpath('.//@class')[0]
-        url = video.xpath('./div/a//@href')[0]
-        title = video.xpath('./div[@class="movie-details"]/a//@title')[0]
-        thumb = video.xpath('./div[@class="movie-details"]/a//@style')[0]
-        thumb = thumb.split('background: url("')[1].split('")')
-        if 'premium' not in movie_type:
-            oc.add(VideoClipObject(
-                url = url,
-                title = title,
-                thumb = Resource.ContentsOfURLWithFallback(url=thumb)
-            ))
-
-    if len(oc) < 1:
-        return ObjectContainer(header="Empty", message="There are no movies available.")
-    else:
-        return oc
-####################################################################################################
+# This function checks a show's video page to see if it offers full episode
 @route(LT_BASE + '/sections')
-def Sections(title, url):
+def Sections(title, url, thumb):
     
     oc = ObjectContainer(title2=title)
-    html = HTML.ElementFromURL(url)
+    html = HTML.ElementFromURL(url, cacheTime = CACHE_1DAY)
     video_types = html.xpath('//select[@name="field_length_value_many_to_one"]/option//@value')
-    Log('the value of video_types is %s' %video_types)
     if 'FullEp' in video_types:
-        oc.add(DirectoryObject(key=Callback(Videos, url=url, vid_type='FullEp', title="Full Episodes"), title="Full Episodes"))
+        oc.add(DirectoryObject(key=Callback(Videos, url=url, vid_type='FullEp', title="Full Episodes"), title="Full Episodes", thumb=thumb))
     if 'Clip' in video_types:
-        oc.add(DirectoryObject(key=Callback(Videos, url=url, vid_type='Clip', title="Clips"), title="Clips"))
-    #oc.add(DirectoryObject(key=Callback(Videos, url=url, vid_type='FullEp', title="Full Episodes"), title="Full Episodes"))
-    #oc.add(DirectoryObject(key=Callback(Videos, url=url, vid_type='Clip', title="Clips"), title="Clips"))
+        oc.add(DirectoryObject(key=Callback(Videos, url=url, vid_type='Clip', title="Clips"), title="Clips", thumb=thumb))
             
     return oc
 ####################################################################################################
+# This function produces a list of videos from the different pages for show full episodes and clips as well as full movies
+# All videos are ordered by most recently added
 @route(LT_BASE + '/videos')
 def Videos(title, url, vid_type):
 
@@ -129,40 +81,60 @@ def Videos(title, url, vid_type):
         local_url = url
     html = HTML.ElementFromURL(local_url)
 
-    for video in html.xpath('//div[@class="video-rollover-container-middle-content"]/div[contains(@class, "views-row")]'):
-        show = video.xpath('.//div[@class="video-rollover-container-middle-player-text"]/b/text()')[0].rstrip(":")
-        new_url = video.xpath('.//a/@href')[0]
-        description = video.xpath('.//a/@title')[0]
-        summary = re.sub(r'<.*?>', '', description)
-        new_thumb = video.xpath('.//img/@src')[0]
-        air_date = video.xpath('.//div[@class="video-rollover-container-player-timer-text"]/text()')[0].strip()
+    for video in html.xpath('//div[@class="video-rollover-container-middle-content"]/div'):
+        show = video.xpath('./div[contains(@class,"player-text")]/b//text()')[0].rstrip(":")
+        vid_url = video.xpath('.//a//@href')[0]
+        description = video.xpath('.//a//@title')[0]
+        # Some of the decsriptions could be split at the period to take out the actual title,
+        # but what appears in the description varies so just keeping all the info that is there
+        summary = description.replace('<div class=trimmed-text>', '').split('</div>')[0]
+        try:
+            exp_date = description.split('<div class=exp-date>')[1].split('</div>')[0]
+        except:
+            exp_date = ''
+        if exp_date:
+            summary = '%s - %s' %(summary, exp_date)
+        thumb = video.xpath('.//img//@src')[0]
+        air_date = video.xpath('.//div[contains(@class,"player-timer-text")]/text()')[0].strip()
         originally_available_at = Datetime.ParseDate(air_date).date()
-        new_title = video.xpath('.//img/@title')[0]
+        vid_title = video.xpath('.//img//@title')[0]
         premium = video.xpath('.//div[@class="video-play-symbol is-premium"]')
         if len(premium) > 0:
-            #new_title = 'Premium - ' + new_title
             continue
-        try:
-            index = int(RE_EPISODE.search(new_title).group(1))
-        except:
-            index = 0
-        season_match = new_url.split('/season-')[1].split('/')[0]
-        season = int(season_match)
-        oc.add(EpisodeObject(
-            show = show,
-            season = season,
-            index = index,
-            url = new_url,
-            title = new_title,
-            summary = summary,
-            thumb = new_thumb,
-            originally_available_at = originally_available_at
-        ))
+        if vid_type == 'FullEp':
+            try:
+                index = int(RE_EPISODE.search(vid_title).group(1))
+            except:
+                index = 0
+            season_match = vid_url.split('/season-')[1].split('/')[0]
+            season = int(season_match)
+            oc.add(EpisodeObject(
+                show = show,
+                season = season,
+                index = index,
+                url = vid_url,
+                title = vid_title,
+                summary = summary,
+                thumb = Resource.ContentsOfURLWithFallback(url=thumb),
+                originally_available_at = originally_available_at
+            ))
     
+        else:
+            oc.add(VideoClipObject(
+                source_title = show,
+                url = vid_url,
+                title = vid_title,
+                summary = summary,
+                thumb = Resource.ContentsOfURLWithFallback(url=thumb),
+                originally_available_at = originally_available_at
+            ))
     oc.objects.sort(key = lambda obj: obj.originally_available_at, reverse=True)
     try:
-        next_page = html.xpath('//li[contains(@class,"video-rollover-container-navigation-right")]/a//@href')[0]
-        oc.add(NextPageObject(key=Callback(Videos, title=title, url=next_page, vid_type=vid_type), title = L("Next Page ...")))
+        page_url = html.xpath('//li[contains(@class,"-navigation") and contains(@class,"-right")]/a//@href')[0]
+        if '/d6/' in page_url:
+            # the url for the main video page does not work unless you remove the d6 directory from the next page anchor
+            page_url = page_url.replace('/d6', LT_URL)
+        oc.add(NextPageObject(key=Callback(Videos, title=title, url=page_url, vid_type=vid_type), title = L("Next Page ...")))
     except:
         pass
 
