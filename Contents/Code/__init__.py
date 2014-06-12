@@ -16,8 +16,7 @@ def Start():
     ObjectContainer.art = R(ART)
     ObjectContainer.title1 = NAME
     DirectoryObject.thumb = R(ICON)
-    EpisodeObject.thumb = R(ICON)
-    VideoClipObject.thumb = R(ICON)
+    DirectoryObject.art = R(ART)
 
     HTTP.CacheTime = CACHE_1HOUR
     HTTP.Headers['User-Agent'] = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.8; rv:18.0) Gecko/20100101 Firefox/18.0'
@@ -29,7 +28,7 @@ def MainMenu():
     oc = ObjectContainer()
     oc.add(DirectoryObject(key=Callback(Shows, title="Current Shows", show_type='-middle'), title="Current Shows"))
     oc.add(DirectoryObject(key=Callback(Shows, title="Classic Shows", show_type=' classic-show'), title="Classic Shows"))
-    oc.add(DirectoryObject(key=Callback(Videos, url=LT_MOVIES, vid_type='FullMov', title="Movies"), title="Movies"))
+    oc.add(DirectoryObject(key=Callback(Videos, title="Movies", url=LT_MOVIES, vid_type='FullMov'), title="Movies"))
     return oc
     
 ####################################################################################################
@@ -43,12 +42,12 @@ def Shows(title, show_type):
     
     for shows in html.xpath('//div[@class="show-item-wrapper%s"]/div/div[contains(@class,"show-item item-")]' %show_type):
         show = shows.xpath('./h3/a//text()')[0]
-        url = shows.xpath('./h3/a//@href')[0]
+        url = shows.xpath('./h3/a/@href')[0]
         vid_url = url + '/video'
         if 'classic' in show_type:
             thumb = R(ICON)
         else:
-            thumb = shows.xpath('./div/a/img//@src')[0]
+            thumb = shows.xpath('./div/a/img/@src')[0]
 
         oc.add(DirectoryObject(key = Callback(Sections, title=show, url=vid_url, thumb=thumb), title=show, thumb=thumb))
             
@@ -60,8 +59,9 @@ def Shows(title, show_type):
 def Sections(title, url, thumb):
     
     oc = ObjectContainer(title2=title)
-    html = HTML.ElementFromURL(url, cacheTime = CACHE_1DAY)
-    video_types = html.xpath('//select[@name="field_length_value_many_to_one"]/option//@value')
+    try: html = HTML.ElementFromURL(url, cacheTime = CACHE_1DAY)
+    except: return ObjectContainer(header="Empty", message="This show does not have any videos.")
+    video_types = html.xpath('//select[@name="field_length_value_many_to_one"]/option/@value')
     if 'FullEp' in video_types:
         oc.add(DirectoryObject(key=Callback(Videos, url=url, vid_type='FullEp', title="Full Episodes"), title="Full Episodes", thumb=thumb))
     if 'Clip' in video_types:
@@ -83,9 +83,10 @@ def Videos(title, url, vid_type):
 
     for video in html.xpath('//div[@class="video-rollover-container-middle-content"]/div'):
         show = video.xpath('./div[contains(@class,"player-text")]/b//text()')[0].rstrip(":")
-        vid_url = video.xpath('.//a//@href')[0]
-        description = video.xpath('.//a//@title')[0]
-        # Some of the decsriptions could be split at the period to take out the actual title,
+        vid_url = video.xpath('.//a/@href')[0]
+        description = video.xpath('.//a/@title')[0]
+        # Some of the descriptions could be split at the period to take out the actual title,
+        # Could also look at pull elements from description string but since varying using replace
         # but what appears in the description varies so just keeping all the info that is there
         summary = description.replace('<div class=trimmed-text>', '').split('</div>')[0]
         try:
@@ -94,10 +95,10 @@ def Videos(title, url, vid_type):
             exp_date = ''
         if exp_date:
             summary = '%s - %s' %(summary, exp_date)
-        thumb = video.xpath('.//img//@src')[0]
+        thumb = video.xpath('.//img/@src')[0]
         air_date = video.xpath('.//div[contains(@class,"player-timer-text")]/text()')[0].strip()
         originally_available_at = Datetime.ParseDate(air_date).date()
-        vid_title = video.xpath('.//img//@title')[0]
+        vid_title = video.xpath('.//img/@title')[0]
         premium = video.xpath('.//div[@class="video-play-symbol is-premium"]')
         if len(premium) > 0:
             continue
@@ -130,7 +131,7 @@ def Videos(title, url, vid_type):
             ))
     oc.objects.sort(key = lambda obj: obj.originally_available_at, reverse=True)
     try:
-        page_url = html.xpath('//li[contains(@class,"-navigation") and contains(@class,"-right")]/a//@href')[0]
+        page_url = html.xpath('//li[contains(@class,"-navigation") and contains(@class,"-right")]/a/@href')[0]
         if '/d6/' in page_url:
             # the url for the main video page does not work unless you remove the d6 directory from the next page anchor
             page_url = page_url.replace('/d6', LT_URL)
