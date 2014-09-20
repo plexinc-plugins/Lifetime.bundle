@@ -5,11 +5,13 @@ LT_BASE = '/video/lifetime'
 
 LT_URL = 'http://www.mylifetime.com'
 LT_SHOWS = LT_URL + '/shows/'
-LT_MOVIES = 'http://www.mylifetime.com/video?field_length_value_many_to_one=FullMov'
-LT_SECTIONS = '%s?field_length_value_many_to_one=%s&media_type=shows'
+LT_VIDEOS = LT_URL + '/video'
+LT_MOVIES = 'http://www.mylifetime.com/watch-full-movies-online'
 
-RE_EPISODE  = Regex('Episode (\d{1,3}).+')
+RE_JSON  = Regex('jQuery.extend\(Drupal.settings, (.+?)}}\);')
 
+RE_SEASON  = Regex('Season (\d{1,3})')
+RE_EP  = Regex('Episode (\d{1,3})')
 ####################################################################################################
 def Start():
 
@@ -26,120 +28,148 @@ def Start():
 def MainMenu():
 
     oc = ObjectContainer()
-    oc.add(DirectoryObject(key=Callback(Shows, title="Current Shows", show_type='-middle'), title="Current Shows"))
-    oc.add(DirectoryObject(key=Callback(Shows, title="Classic Shows", show_type=' classic-show'), title="Classic Shows"))
-    oc.add(DirectoryObject(key=Callback(Videos, title="Movies", url=LT_MOVIES, vid_type='FullMov'), title="Movies"))
+    oc.add(DirectoryObject(key=Callback(Shows, title="Lifetime Shows", show_type='Shows'), title="Lifetime Shows"))
+    oc.add(DirectoryObject(key=Callback(Shows, title="LMN Shows", show_type='LMN'), title="LMN Shows"))
+    oc.add(DirectoryObject(key=Callback(Movies, title="Movies"), title="Movies"))
     return oc
     
 ####################################################################################################
 # This function produces a list of TV shows from the lifetime show page
-# Original plugin used video page. Using show page allows for images and fixes issue with show URLs errors due to added characters
 @route(LT_BASE + '/shows')
 def Shows(title, show_type):
     
     oc = ObjectContainer(title2=title)
     html = HTML.ElementFromURL(LT_SHOWS)
     
-    for shows in html.xpath('//div[@class="show-item-wrapper%s"]/div/div[contains(@class,"show-item item-")]' %show_type):
-        show = shows.xpath('./h3/a//text()')[0]
-        url = shows.xpath('./h3/a/@href')[0]
-        vid_url = url + '/video'
-        if 'classic' in show_type:
-            thumb = R(ICON)
-        else:
-            thumb = shows.xpath('./div/a/img/@src')[0]
+    for shows in html.xpath('//*[text()="%s"]/following::ul[contains(@class,"menu list-3")][1]//li/a' %show_type):
+        show = shows.xpath('.//text()')[0]
+        url = shows.xpath('./@href')[0]
 
-        oc.add(DirectoryObject(key = Callback(Sections, title=show, url=vid_url, thumb=thumb), title=show, thumb=thumb))
+        oc.add(DirectoryObject(key = Callback(Sections, title=show, url=url), title=show))
             
     return oc
     
 ####################################################################################################
-# This function checks a show's video page to see if it offers full episode
+# This function checks a show for a video and/or full episode page
 @route(LT_BASE + '/sections')
-def Sections(title, url, thumb):
+def Sections(title, url):
     
     oc = ObjectContainer(title2=title)
-    try: html = HTML.ElementFromURL(url, cacheTime = CACHE_1DAY)
-    except: return ObjectContainer(header="Empty", message="This show does not have any videos.")
-    video_types = html.xpath('//select[@name="field_length_value_many_to_one"]/option/@value')
-    if 'FullEp' in video_types:
-        oc.add(DirectoryObject(key=Callback(Videos, url=url, vid_type='FullEp', title="Full Episodes"), title="Full Episodes", thumb=thumb))
-    if 'Clip' in video_types:
-        oc.add(DirectoryObject(key=Callback(Videos, url=url, vid_type='Clip', title="Clips"), title="Clips", thumb=thumb))
-            
-    return oc
-####################################################################################################
-# This function produces a list of videos from the different pages for show full episodes and clips as well as full movies
-# All videos are ordered by most recently added
-@route(LT_BASE + '/videos')
-def Videos(title, url, vid_type):
+    html = HTML.ElementFromURL(url)
+    # Check for a video and/or full episode link in navigation bar
+    video_types = html.xpath('//div[(contains(@class, "show-") and contains(@class, "-menu")) or contains(@class, "content-header")]//li/a/text()')
+    if "Full Episodes" in video_types: 
+        oc.add(DirectoryObject(key=Callback(Videos, url=url + '/video/full-episodes', title="Full Episodes"), title="Full Episodes"))
+    if "Video" in video_types: 
+        oc.add(DirectoryObject(key=Callback(Videos, url=url + '/video', title="All Videos"), title="All Videos"))
 
-    oc = ObjectContainer(title2=title)
-    if not '?' in url:
-        local_url = LT_SECTIONS %(url, vid_type)
+    #Since we are picking up the list of all shows, some may not have videos, so give message here if no videos are found
+    if len(oc) < 1:
+        Log ('still no value for objects')
+        return ObjectContainer(header="Empty", message="There are no videos for this show.")
     else:
-        local_url = url
-    html = HTML.ElementFromURL(local_url)
-
-    for video in html.xpath('//div[@class="video-rollover-container-middle-content"]/div'):
-        show = video.xpath('./div[contains(@class,"player-text")]/b//text()')[0].rstrip(":")
-        vid_url = video.xpath('.//a/@href')[0]
-        description = video.xpath('.//a/@title')[0]
-        # Some of the descriptions could be split at the period to take out the actual title,
-        # Could also look at pull elements from description string but since varying using replace
-        # but what appears in the description varies so just keeping all the info that is there
-        summary = description.replace('<div class=trimmed-text>', '').split('</div>')[0]
-        try:
-            exp_date = description.split('<div class=exp-date>')[1].split('</div>')[0]
-        except:
-            exp_date = ''
-        if exp_date:
-            summary = '%s - %s' %(summary, exp_date)
-        thumb = video.xpath('.//img/@src')[0]
-        air_date = video.xpath('.//div[contains(@class,"player-timer-text")]/text()')[0].strip()
-        originally_available_at = Datetime.ParseDate(air_date).date()
-        vid_title = video.xpath('.//img/@title')[0]
-        premium = video.xpath('.//div[@class="video-play-symbol is-premium"]')
-        if len(premium) > 0:
+        return oc
+            
+####################################################################################################
+# This function uses the json in each page to process videos on that page
+# This can process the new style of videos
+@route(LT_BASE + '/videos')
+def Videos(title, url=''):
+    
+    oc = ObjectContainer(title2=title)
+    content = HTTP.Request(url).content
+    json_data = RE_JSON.search(content).group(1)
+    json_data = json_data + '}}'
+    #Log('the value of json_data is %s' %json_data)
+    json = JSON.ObjectFromString(json_data)
+    
+    for video in json['video']['videos']:
+        vid_title = video['title']
+        try: unlocked = video['video_behind_wall']
+        except: unlocked = video['is_premium']
+        if unlocked=='yes' or unlocked=='1':
             continue
-        if vid_type == 'FullEp':
-            try:
-                index = int(RE_EPISODE.search(vid_title).group(1))
-            except:
-                index = 0
-            season_match = vid_url.split('/season-')[1].split('/')[0]
-            season = int(season_match)
+        vid_title = video['title']
+        thumb = video['thumbnail']
+        vid_url = LT_URL + '/' + video['path']
+        # This keeps the first video from reproducing for each page
+        if url.startswith(vid_url):
+            continue
+        try: vid_date = Datetime.ParseDate(video['original_air_date']).date()
+        except: vid_date = None
+        description = video['short_description']
+        # Seems a few are missing the duration so try/except
+        try: duration = int(video['duration']) * 1000
+        except: duration = 0
+        try: show_title = video['series_name']
+        except: show_title = title
+        # Some season are not producing, so if there is not a season get that info from the description
+        try: season = int(season = video['season'])
+        except:
+            try: season = int(RE_SEASON.search(description).group(1))
+            except: season = 0
+        try: episode = int(video['episode'])
+        except:  episode = 0
+        if episode!=0:
             oc.add(EpisodeObject(
-                show = show,
+                show = show_title,
                 season = season,
-                index = index,
+                index = episode,
+                duration = duration,
                 url = vid_url,
                 title = vid_title,
-                summary = summary,
-                thumb = Resource.ContentsOfURLWithFallback(url=thumb),
-                originally_available_at = originally_available_at
+                originally_available_at = vid_date,
+                summary = description,
+                thumb = Resource.ContentsOfURLWithFallback(url=thumb)
             ))
-    
         else:
             oc.add(VideoClipObject(
-                source_title = show,
                 url = vid_url,
                 title = vid_title,
-                summary = summary,
-                thumb = Resource.ContentsOfURLWithFallback(url=thumb),
-                originally_available_at = originally_available_at
+                summary = description,
+                originally_available_at = vid_date,
+                thumb = Resource.ContentsOfURLWithFallback(url=thumb)
             ))
-    oc.objects.sort(key = lambda obj: obj.originally_available_at, reverse=True)
+            
+
     try:
-        page_url = html.xpath('//li[contains(@class,"-navigation") and contains(@class,"-right")]/a/@href')[0]
-        if '/d6/' in page_url:
-            # the url for the main video page does not work unless you remove the d6 directory from the next page anchor
-            page_url = page_url.replace('/d6', LT_URL)
-        oc.add(NextPageObject(key=Callback(Videos, title=title, url=page_url, vid_type=vid_type), title = L("Next Page ...")))
+        html = HTML.ElementFromString(content)
+        next_url = html.xpath('//ul[contains(@class,"pager")]/li[contains(@class,"next") or contains(@class,"-right")]/a/@href')[0]
+        if not next_url.startswith('http://'):
+            next_url = '%s%s' %(LT_URL, next_url)
+        oc.add(NextPageObject(key=Callback(Videos, title=title, url=next_url), title = L("Next Page ...")))
     except:
         pass
 
     if len(oc) < 1:
-        return ObjectContainer(header="Empty", message="This show does not have any unlocked videos available.")
+        Log ('still no value for objects')
+        return ObjectContainer(header="Empty", message="There are no unlocked full episodes listed for this show.")
     else:
         return oc
+    
+####################################################################################################
+# This function produces a list of movies from the lifetime movies watch online page
+# The json pull does not work on this page
+@route(LT_BASE + '/movies')
+def Movies(title):
+    
+    oc = ObjectContainer(title2=title)
+    html = HTML.ElementFromURL(LT_MOVIES)
+    
+    for movies in html.xpath('//div[@class="movie-details"]'):
+        premium_list = movies.xpath('./a/div/@class')
+        if 'premium-new' in premium_list:
+            continue
+        title = movies.xpath('./a/@title')[0]
+        url = movies.xpath('./a/@href')[0]
+        thumb = movies.xpath('./a/@style')[0]
+        thumb = thumb.split('"')[1].split('"')[0]
+
+        oc.add(VideoClipObject(
+            url = url,
+            title = title,
+            thumb = Resource.ContentsOfURLWithFallback(url=thumb)
+        ))
+            
+    return oc
+    
