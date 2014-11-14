@@ -8,7 +8,7 @@ LT_SHOWS = LT_URL + '/shows/'
 LT_VIDEOS = LT_URL + '/video'
 LT_MOVIES = 'http://www.mylifetime.com/watch-full-movies-online'
 
-RE_JSON  = Regex('jQuery.extend\(Drupal.settings, (.+?)}}\);')
+RE_JSON  = Regex('jQuery.extend\(Drupal.settings, (.+?)\);')
 
 RE_SEASON  = Regex('Season (\d{1,3})')
 RE_EP  = Regex('Episode (\d{1,3})')
@@ -80,7 +80,6 @@ def Videos(title, url=''):
     oc = ObjectContainer(title2=title)
     content = HTTP.Request(url).content
     json_data = RE_JSON.search(content).group(1)
-    json_data = json_data + '}}'
     #Log('the value of json_data is %s' %json_data)
     json = JSON.ObjectFromString(json_data)
 
