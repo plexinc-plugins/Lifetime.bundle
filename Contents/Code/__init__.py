@@ -29,7 +29,8 @@ def Start():
 def MainMenu():
 
     oc = ObjectContainer()
-    oc.add(DirectoryObject(key=Callback(Shows, title="Lifetime Shows", show_type='Shows'), title="Lifetime Shows"))
+    oc.add(DirectoryObject(key=Callback(PopularShows, title="Popular Lifetime Shows"), title="Popular Lifetime Shows"))
+    oc.add(DirectoryObject(key=Callback(Shows, title="All Lifetime Shows", show_type='Lifetime Shows Home'), title="All Lifetime Shows"))
     oc.add(DirectoryObject(key=Callback(Shows, title="LMN Shows", show_type='LMN'), title="LMN Shows"))
     oc.add(DirectoryObject(key=Callback(Movies, title="Movies"), title="Movies"))
     return oc
@@ -42,11 +43,29 @@ def Shows(title, show_type):
     oc = ObjectContainer(title2=title)
     html = HTML.ElementFromURL(LT_SHOWS)
 
-    for shows in html.xpath('//*[text()="%s"]/following::ul[contains(@class,"menu list-3")][1]//li/a' %show_type):
+    for shows in html.xpath('//*[text()="%s"]/following-sibling::ul/li/a' %show_type):
         show = shows.xpath('.//text()')[0]
         url = shows.xpath('./@href')[0]
 
         oc.add(DirectoryObject(key = Callback(Sections, title=show, url=url), title=show))
+
+    return oc
+
+####################################################################################################
+# This function produces a list of TV shows from the lifetime show page
+@route(LT_BASE + '/popularshows')
+def PopularShows(title):
+
+    oc = ObjectContainer(title2=title)
+    html = HTML.ElementFromURL(LT_SHOWS)
+
+    for shows in html.xpath('//div[@class="sl-image-block"]'):
+        thumb = shows.xpath('./div/a/img/@data-img-src')[0]
+        url = shows.xpath('./div/a/@href')[0]
+        try: summary = shows.xpath('./span/text()')[0]
+        except: summary = ''
+
+        oc.add(DirectoryObject(key = Callback(Sections, title=title, url=url), thumb=Resource.ContentsOfURLWithFallback(url=thumb), summary=summary))
 
     return oc
 
