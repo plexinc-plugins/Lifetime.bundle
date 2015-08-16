@@ -155,7 +155,7 @@ def VideoJSON(title, url):
 
     if len(oc) < 1:
         Log ('still no value for objects')
-        return ObjectContainer(header="Empty", message="There are no shows to list.")
+        return ObjectContainer(header="Empty", message="There are no unlocked videos to list.")
     else:
         return oc
 
