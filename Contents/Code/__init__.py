@@ -94,7 +94,7 @@ def Shows(title, url):
 ####################################################################################################
 # This function produces a list of shows from the json  to build a fullep json url
 @route(LT_BASE + '/showlistjson')
-def ShowListJSON (json_url, gv_json):
+def ShowListJSON (title, json_url, gv_json):
 
     oc = ObjectContainer(title2=title)
     json = JSON.ObjectFromURL(json_url)
