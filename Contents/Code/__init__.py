@@ -1,59 +1,158 @@
 NAME = 'Lifetime'
-ICON = 'icon-default.jpg'
-ART = 'art-default.jpg'
-LT_BASE = '/video/lifetime'
+PREFIX = '/video/lifetime'
 
 LT_URL = 'http://www.mylifetime.com'
-SHOW_JSON  = LT_URL + '/gv/lazy-load-shows-all/0/999?format=json'
-POPULAR_JSON  = LT_URL + '/gv/lazy-load-shows/0/ ?format=json'
+SHOWS = 'http://wombatapi.aetv.com/shows2/mlt'
+SIGNATURE_URL = 'http://servicesaetn-a.akamaihd.net/jservice/video/components/get-signed-signature?url=%s'
+SMIL_NS = {"a":"http://www.w3.org/2005/SMIL21/Language"}
 MOVIE_JSON  = LT_URL + '/gv/lazy-load-latest-lt/0/999?format=json'
-FULLEP_GV  = '/gv/lazy-load-full-eps/'
 
 ####################################################################################################
 def Start():
 
     ObjectContainer.title1 = NAME
-    DirectoryObject.thumb = R(ICON)
-    EpisodeObject.thumb = R(ICON)
-
     HTTP.CacheTime = CACHE_1HOUR
     HTTP.Headers['User-Agent'] = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/37.0.2062.124 Safari/537.36'
 
 ####################################################################################################
-@handler(LT_BASE, NAME, art=ART, thumb=ICON)
+@handler(PREFIX, NAME)
 def MainMenu():
 
     oc = ObjectContainer()
-    oc.add(DirectoryObject(key=Callback(ShowListJSON, title="Popular Shows", json_url=POPULAR_JSON, gv_json=FULLEP_GV), title="Popular Shows"))
-    oc.add(DirectoryObject(key=Callback(ShowListJSON, title="All Shows", json_url=SHOW_JSON, gv_json=FULLEP_GV), title="All Shows"))
+    oc.add(DirectoryObject(key=Callback(Shows, title="All Shows"), title="All Shows"))
     oc.add(DirectoryObject(key=Callback(VideoJSON, title="Movies", url=MOVIE_JSON), title="Movies"))
     return oc
 
 ####################################################################################################
-# This function produces a list of shows from the json  to build a fullep json url
-@route(LT_BASE + '/showlistjson')
-def ShowListJSON (title, json_url, gv_json):
-
+@route(PREFIX + '/shows')
+def Shows(title, showPosition=''):
     oc = ObjectContainer(title2=title)
-    json = JSON.ObjectFromURL(json_url)
+    
+    json_data = JSON.ObjectFromURL(SHOWS)
+    
+    for item in json_data:
+        if showPosition and item['showPosition']=='Position Not Set':
+            continue
+            
+        if not (item['hasNoVideo'] == 'false' or item['hasNoHDVideo'] == 'false'):
+            continue
+        
+        oc.add(
+            TVShowObject(
+                key = Callback(
+                    Seasons,
+                    show_id = item['showID'],
+                    show_title = item['detailTitle'],
+                    episode_url = item['episodeFeedURL'],
+                    clip_url = item['clipFeedURL'],
+                    show_thumb = item['detailImageURL2x']
+                ),
+                rating_key = item['showID'],
+                title = item['detailTitle'],
+                summary = item['detailDescription'],
+                thumb = item['detailImageURL2x'],
+                studio = item['network']
+            )
+        )
 
-    for section in json['items']:
-        show = section['title']
-        url = section['url']
-        show_code = String.Quote(section['show_code'], usePlus = False)
-        total_videos = section['total_videos']
-        section_url = LT_URL + '%s%s/0/%s?format=json' %(gv_json, show_code, total_videos)
-        oc.add(DirectoryObject(key = Callback(VideoJSON, title=show, url=section_url), title=show))
-
-    if len(oc) < 1:
-        Log ('still no value for objects')
-        return ObjectContainer(header="Empty", message="There are no videos to list.")
-    else:
-        return oc
+    oc.objects.sort(key = lambda obj: obj.title)
+    
+    return oc
 
 ####################################################################################################
-# This function produces a list of full episodes from json
-@route(LT_BASE + '/videojson')
+@route(PREFIX + '/seasons')
+def Seasons(show_id, show_title, episode_url, clip_url, show_thumb):
+
+    oc = ObjectContainer(title2=show_title)
+    
+    json_data = JSON.ObjectFromURL(episode_url + '&filter_by=isBehindWall&filter_value=false')
+    
+    seasons = {}
+    for item in json_data['Items']:
+        if 'season' in item:
+            if not int(item['season']) in seasons:
+                seasons[int(item['season'])] = 1
+            else:
+                seasons[int(item['season'])] = seasons[int(item['season'])] + 1
+    
+    for season in seasons:
+        oc.add(
+            SeasonObject(
+                key = Callback(
+                    Episodes,
+                    show_title = show_title,
+                    episode_url = episode_url,
+                    clip_url = clip_url,
+                    show_thumb = show_thumb,
+                    season = season
+                ),
+                title = 'Season %s' % season,
+                rating_key = show_id + str(season),
+                index = int(season),
+                episode_count = seasons[season],
+                thumb = show_thumb
+            )
+        )
+ 
+    if len(oc) < 1:
+        return ObjectContainer(header='Empty', message='This show does not have any unlocked videos available.')
+    else:
+        oc.objects.sort(key = lambda obj: obj.index, reverse = True)
+        return oc 
+    
+
+####################################################################################################
+@route(PREFIX + '/episodes')
+def Episodes(show_title, episode_url, clip_url, show_thumb, season):
+
+    oc = ObjectContainer(title2=show_title)
+    json_data = JSON.ObjectFromURL(episode_url + '&filter_by=isBehindWall&filter_value=false')
+    
+    for item in json_data['Items']:
+        if 'season' in item:
+            if not int(item['season']) == int(season):
+                continue
+        
+        url = item['siteUrl']
+        title = item['title']
+        summary = item['description'] if 'description' in item else None
+        
+        if 'thumbnailImage2xURL' in item:
+            thumb = item['thumbnailImage2xURL']
+        elif 'stillImageURL' in item:
+            thumb = item['stillImageURL']
+        elif 'modalImageURL' in item:
+            thumb = item['modalImageURL']
+        else:
+            thumb = show_thumb
+            
+        show = item['seriesName'] if 'seriesName' in item else show_title
+        duration = int(item['totalVideoDuration']) if 'totalVideoDuration' in item else None
+        originally_available_at = Datetime.ParseDate(item['originalAirDate'].split('T')[0]).date() if 'originalAirDate' in item else None
+        index = int(item['episode']) if 'episode' in item else None
+        season = int(item['season']) if 'season' in item else None
+        
+        oc.add(
+            EpisodeObject(
+                url = url,
+                title = title,
+                summary = summary,
+                thumb = thumb,
+                art = show_thumb,
+                show = show,
+                duration = duration,
+                originally_available_at = originally_available_at,
+                index = index,
+                season = season
+            )
+        )
+    
+    oc.objects.sort(key = lambda obj: obj.index)
+    
+    return oc
+####################################################################################################
+# This function produces a list of movies from json
+@route(PREFIX + '/videojson')
 def VideoJSON(title, url):
 
     oc = ObjectContainer(title2=title)
@@ -68,28 +167,14 @@ def VideoJSON(title, url):
             video_url = video_url.replace('/just-added-full-episodes', '')
         try: duration = int(video['duration']) * 1000
         except: duration = 0
-        episode = video['episode']
-        if episode:
-            oc.add(EpisodeObject(
-                show = video['series'],
-                season = int(video['season']),
-                index = int(episode),
-                duration = duration,
-                url = video_url,
-                title = video['video_title'],
-                originally_available_at = Datetime.ParseDate(video['air_date']),
-                summary = video['short_desc'],
-                thumb = Resource.ContentsOfURLWithFallback(url=video['video_thumb'], fallback=ICON)
-            ))
-        else:
-            oc.add(VideoClipObject(
-                duration = duration,
-                url = video_url,
-                title = video['video_title'],
-                originally_available_at = Datetime.ParseDate(video['air_date']),
-                summary = video['short_desc'],
-                thumb = Resource.ContentsOfURLWithFallback(url=video['video_thumb'], fallback=ICON)
-            ))
+        oc.add(VideoClipObject(
+            duration = duration,
+            url = video_url,
+            title = video['video_title'],
+            originally_available_at = Datetime.ParseDate(video['air_date']),
+            summary = video['short_desc'],
+            thumb = Resource.ContentsOfURLWithFallback(url=video['video_thumb'])
+        ))
 
     if len(oc) < 1:
         Log ('still no value for objects')
