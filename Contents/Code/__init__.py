@@ -114,6 +114,8 @@ def Episodes(show_title, episode_url, clip_url, show_thumb, season):
                 continue
         
         url = item['siteUrl']
+        if url.startswith('//www.mylifetime.com'):
+            url = 'http:' + url
         title = item['title']
         summary = item['description'] if 'description' in item else None
         
