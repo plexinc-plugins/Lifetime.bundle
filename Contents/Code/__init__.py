@@ -3,8 +3,6 @@ PREFIX = '/video/lifetime'
 
 LT_URL = 'http://www.mylifetime.com'
 SHOWS = 'http://wombatapi.aetv.com/shows2/mlt'
-SIGNATURE_URL = 'http://servicesaetn-a.akamaihd.net/jservice/video/components/get-signed-signature?url=%s'
-SMIL_NS = {"a":"http://www.w3.org/2005/SMIL21/Language"}
 MOVIE_JSON  = LT_URL + '/gv/lazy-load-latest-lt/0/999?format=json'
 
 ####################################################################################################
