@@ -111,7 +111,8 @@ def Episodes(show_title, episode_url, clip_url, show_thumb, season):
             if not int(item['season']) == int(season):
                 continue
         
-        url = item['siteUrl']
+        try: url = item['siteUrl']
+        except: continue
         if url.startswith('//www.mylifetime.com'):
             url = 'http:' + url
         title = item['title']
