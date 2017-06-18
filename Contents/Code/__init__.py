@@ -3,7 +3,7 @@ PREFIX = '/video/lifetime'
 
 LT_URL = 'http://www.mylifetime.com'
 SHOWS = 'http://wombatapi.aetv.com/shows2/mlt'
-MOVIE_JSON  = LT_URL + '/gv/lazy-load-latest-lt/0/999?format=json'
+MOVIE_URL  = LT_URL + '/videos/movies'
 
 ####################################################################################################
 def Start():
@@ -18,7 +18,7 @@ def MainMenu():
 
     oc = ObjectContainer()
     oc.add(DirectoryObject(key=Callback(Shows, title="All Shows"), title="All Shows"))
-    oc.add(DirectoryObject(key=Callback(VideoJSON, title="Movies", url=MOVIE_JSON), title="Movies"))
+    oc.add(DirectoryObject(key=Callback(Movies, title="Movies"), title="Movies"))
     return oc
 
 ####################################################################################################
@@ -152,29 +152,27 @@ def Episodes(show_title, episode_url, clip_url, show_thumb, season):
     
     return oc
 ####################################################################################################
-# This function produces a list of movies from json
-@route(PREFIX + '/videojson')
-def VideoJSON(title, url):
+# This function produces a list of movies from the 
+@route(PREFIX + '/movies')
+def Movies(title):
 
     oc = ObjectContainer(title2=title)
-    json = JSON.ObjectFromURL(url)
+    html = HTML.ElementFromURL(MOVIE_URL)
 
-    for video in json['items']:
-        unlocked = video['behind_wall']
-        if unlocked=='1':
+    for video in html.xpath('//div[@class="content"]//li'):
+        try: video_title = video.xpath('./@data-title')[0]
+        except: continue
+        unlocked = video.xpath('.//div[@class="circle-icon"]/span/@class')[0]
+        if unlocked.endswith('key'):
             continue
-        video_url = video['video_url']
-        if '/just-added-full-episodes' in video_url:
-            video_url = video_url.replace('/just-added-full-episodes', '')
-        try: duration = int(video['duration']) * 1000
-        except: duration = 0
+        video_url = video.xpath('./a/@href')[0]
+        if not video_url.startswith('http'):
+            video_url = LT_URL + video_url
+        thumb = video.xpath('.//img/@src')[0]
         oc.add(VideoClipObject(
-            duration = duration,
             url = video_url,
-            title = video['video_title'],
-            originally_available_at = Datetime.ParseDate(video['air_date']),
-            summary = video['short_desc'],
-            thumb = Resource.ContentsOfURLWithFallback(url=video['video_thumb'])
+            title = video_title,
+            thumb = Resource.ContentsOfURLWithFallback(url=thumb)
         ))
 
     if len(oc) < 1:
