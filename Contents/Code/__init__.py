@@ -1,4 +1,6 @@
 NAME = 'Lifetime'
+ART = 'art-default.jpg'
+ICON = 'icon-default.jpg'
 PREFIX = '/video/lifetime'
 
 BASE_PATH = 'http://www.mylifetime.com'
@@ -21,7 +23,7 @@ def Start():
     HTTP.Headers['User-Agent'] = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11) AppleWebKit/601.1.56 (KHTML, like Gecko) Version/9.0 Safari/601.1.56'
 
 ####################################################################################################
-@handler(PREFIX, NAME)
+@handler(PREFIX, NAME, art=ART, thumb=ICON)
 def MainMenu():
 
     oc = ObjectContainer()
